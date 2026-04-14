@@ -68,6 +68,11 @@ export interface NormalizedDay {
   rainfallTrace: boolean; // true 若原值為 "T"（微量 <0.1mm）
 }
 
+export interface MaSeriesPoint {
+  date: string;
+  value: number | null;
+}
+
 export interface WeatherPayload {
   station: {
     id: string;
@@ -79,12 +84,20 @@ export interface WeatherPayload {
     expectedDays: number;
   };
   days: NormalizedDay[];
+  metrics: {
+    ma5MaxTemp: MaSeriesPoint[];       // 近 5 日平均最高溫（逐日）
+    ma20MaxTemp: MaSeriesPoint[];      // 近 20 日平均最高溫（逐日）
+    latestMa5: MaSeriesPoint | null;   // 最新可計算的 5 日 MA（供前端數字卡片顯示）
+    latestMa20: MaSeriesPoint | null;  // 最新可計算的 20 日 MA
+  };
   credibility: {
     completeDays: number;
     missingDates: string[];
     tempMissingDates: string[];
     rainMissingDates: string[];
     traceRainDays: number;
+    ma5Computable: boolean;
+    ma20Computable: boolean;
     notes: string[];
   };
 }

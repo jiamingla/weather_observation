@@ -5,6 +5,7 @@ import {
   WeatherPayload,
   parseRainfall,
 } from './cwa.schemas';
+import { latestValid, rollingAverage } from './metrics';
 
 // 「最近 30 天」定義：以昨日為基準往前取 30 個完整日（含昨日）
 // 時區：一律 Asia/Taipei；CWA 回傳的 Date 已是 YYYY-MM-DD 本地日
@@ -118,6 +119,18 @@ export class WeatherService {
       (d) => d.maxTemp !== null && d.minTemp !== null && d.rainfallMm !== null,
     ).length;
 
+    // ---- 指標計算（近 5 日 / 近 20 日平均最高溫）----
+    const maxTempSeries = days.map((d) => ({
+      date: d.date,
+      value: d.maxTemp,
+    }));
+    const ma5MaxTemp = rollingAverage(maxTempSeries, 5);
+    const ma20MaxTemp = rollingAverage(maxTempSeries, 20);
+    const latestMa5 = latestValid(ma5MaxTemp);
+    const latestMa20 = latestValid(ma20MaxTemp);
+    const ma5Computable = latestMa5 !== null;
+    const ma20Computable = latestMa20 !== null;
+
     const notes: string[] = [];
     if (tempMissing.length > 0)
       notes.push(`溫度缺漏 ${tempMissing.length} 日`);
@@ -125,6 +138,14 @@ export class WeatherService {
       notes.push(`雨量缺漏 ${rainMissing.length} 日`);
     if (traceRainDays > 0)
       notes.push(`其中 ${traceRainDays} 日為微量降雨（"T"，<0.1mm，已計為 0mm）`);
+    if (!ma5Computable)
+      notes.push('近 5 日平均最高溫無法計算（視窗內有缺漏日）');
+    else if (latestMa5 && latestMa5.date !== to)
+      notes.push(
+        `近 5 日平均最高溫最新可信日為 ${latestMa5.date}（較區間末日 ${to} 延遲）`,
+      );
+    if (!ma20Computable)
+      notes.push('近 20 日平均最高溫無法計算（視窗內有缺漏日或資料不足 20 日）');
 
     return {
       station: {
@@ -133,12 +154,20 @@ export class WeatherService {
       },
       range: { from, to, expectedDays },
       days,
+      metrics: {
+        ma5MaxTemp,
+        ma20MaxTemp,
+        latestMa5,
+        latestMa20,
+      },
       credibility: {
         completeDays,
         missingDates,
         tempMissingDates: tempMissing,
         rainMissingDates: rainMissing,
         traceRainDays,
+        ma5Computable,
+        ma20Computable,
         notes,
       },
     };
