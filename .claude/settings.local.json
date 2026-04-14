@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:codis.cwa.gov.tw)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:opendata.cwa.gov.tw)",
+      "Bash(curl -s \"https://opendata.cwa.gov.tw/linked/swagger/opendata.json\" -o /tmp/cwa-swagger.json)",
+      "Read(//tmp/**)"
+    ]
+  }
+}
