@@ -1,6 +1,13 @@
 <script setup lang="ts">
 const stationId = ref('466920')
 const { data, loading, error, fetchWeather } = useWeather()
+const {
+  data: analysis,
+  loading: analysisLoading,
+  error: analysisError,
+  analyze,
+  reset: resetAnalysis,
+} = useAnalysis()
 
 // 常見測站快捷鍵（非「城市 AI 模糊匹配」— 那是 Stage 4 的事）
 const presets = [
@@ -12,12 +19,17 @@ const presets = [
 ]
 
 async function submit() {
+  resetAnalysis()
   await fetchWeather(stationId.value)
 }
 
 function usePreset(id: string) {
   stationId.value = id
   submit()
+}
+
+async function runAnalysis() {
+  await analyze(stationId.value)
 }
 
 // 首次載入先抓一次（僅客戶端，避免 SSR 打 devProxy 失敗）
@@ -78,6 +90,12 @@ onMounted(() => {
         <section class="rounded-md border border-slate-200 bg-white p-4">
           <WeatherChart :payload="data" />
         </section>
+        <AnalysisPanel
+          :data="analysis"
+          :loading="analysisLoading"
+          :error="analysisError"
+          @regenerate="runAnalysis"
+        />
       </template>
 
       <footer class="text-xs text-slate-400 text-center pt-8">

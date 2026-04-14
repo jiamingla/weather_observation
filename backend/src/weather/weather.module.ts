@@ -6,5 +6,6 @@ import { WeatherService } from './weather.service';
 @Module({
   controllers: [WeatherController],
   providers: [CwaClient, WeatherService],
+  exports: [WeatherService],
 })
 export class WeatherModule {}
