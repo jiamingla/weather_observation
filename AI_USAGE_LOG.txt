@@ -1,4 +1,4 @@
-AI 使用紀錄 — 天氣觀測資料系統
+﻿AI 使用紀錄 — 天氣觀測資料系統
 =============================================
 工具：Claude Code (Claude Opus 4.6, 1M context) — 用於設計、寫碼、除錯
       Google Gemini 2.5-flash-lite 經 @google/genai SDK — 作為受限版 AI 分析的生成器
@@ -13,7 +13,7 @@ AI 使用紀錄 — 天氣觀測資料系統
 我沒有先讓 AI 寫程式，而是先把題目檔丟給 AI 並說：
 「這是工程部高管給我們的作業，我想先決定哪些要做哪些不要做。」
 
-用意是先拿到**範圍判斷**，不是直接生成系統。我希望 AI 先幫我：
+用意是先拿到範圍判斷，不是直接生成系統。我希望 AI 先幫我：
   - 拆解題目評分權重（核心功能 vs AI 分析）
   - 標出可砍項目與為什麼可以砍
   - 就我預定的技術棧（NestJS + Nuxt3 + Postgres + Cron）挑戰是否過度
@@ -57,13 +57,13 @@ AI 使用紀錄 — 天氣觀測資料系統
   Swagger 文件上，雨量欄位型別寫 String，最高溫/最低溫寫 Double。
   如果我讓 AI 直接根據文件寫 Zod：
       Precipitation: z.string().transform(parseFloat)
-  這段程式**上線會馬上爆炸**，因為 CWA 的雨量值除了數字字串
-  （"0.0"、"3.5"）外，還會回 `"T"` 表示 trace（微量 <0.1mm）。
+  這段程式上線會馬上爆炸，因為 CWA 的雨量值除了數字字串
+  （"0.0"、"3.5"）外，還會回 "T" 表示 trace（微量 <0.1mm）。
   parseFloat("T") = NaN，後面所有計算直接污染。
 
   我怎麼辨識的：
   - 我堅持「先 curl 真實 API 再寫 schema」，不相信文件
-  - 在實際回應裡看到 `"Precipitation":"T"` 這個值
+  - 在實際回應裡看到 "Precipitation":"T" 這個值
   - 查證後確認是官方 trace 標記，且 swagger 完全沒寫
 
   調整：在 cwa.schemas.ts 寫了 parseRainfall(raw) 明確處理三種情境
@@ -99,7 +99,7 @@ AI 使用紀錄 — 天氣觀測資料系統
 
   我怎麼辨識的：
   - 我看了 scaffold 指令的輸出最後幾行，抓到
-    `Failed to execute command: pnpm pnpm install`
+    Failed to execute command: pnpm pnpm install
   - 手動進 backend/ 跑 pnpm install 才真的裝好依賴
 
   教訓：AI 會讀粗略的「成功」訊息，但不一定會驗證底層副作用。
@@ -109,34 +109,34 @@ AI 使用紀錄 — 天氣觀測資料系統
 ● 錯誤 5（Stage 5 踩的第一個雷）：AI API key 格式看起來對但實際不對
 
   我原本以為拿到「任何長字串」就能當 API key，直接貼進 .env。第一次
-  設定 GEMINI_API_KEY 是 `AQ.Ab8RN6I4...` 開頭，呼叫時一直回 403 /
-  429，錯誤訊息裡 `free_tier_requests, limit: 0` 看起來像 quota 問題。
+  設定 GEMINI_API_KEY 是 AQ.Ab8RN6I4... 開頭，呼叫時一直回 403 /
+  429，錯誤訊息裡 free_tier_requests, limit: 0 看起來像 quota 問題。
 
   我怎麼辨識的：
-  - 對照 Google AI Studio 文件，發現官方 key 應該以 `AIza` 開頭，
-    `AQ.` 開頭是 Google Cloud OAuth token，根本不是 AI Studio key
+  - 對照 Google AI Studio 文件，發現官方 key 應該以 AIza 開頭，
+    AQ. 開頭是 Google Cloud OAuth token，根本不是 AI Studio key
   - 因此即使 API 回 429 而非 401，真正原因是「key 格式混淆 + 專案
     免費額度設定問題」複合，需要分兩步解決
 
   教訓：API 錯誤訊息不一定指向真正原因。429 不代表「用超過」，可能
-  是「key 本身被當成沒配額的身分」。遇到 `limit: 0` 要先懷疑是身分
+  是「key 本身被當成沒配額的身分」。遇到 limit: 0 要先懷疑是身分
   而非用量問題。
 
 
 ● 錯誤 6（Stage 5）：Gemma 模型不支援 Gemini 的 structured output
 
-  我本來想用 `gemma-4-31b-it` 跑 AI 分析（以為 Gemma 也在 Gemini API
+  我本來想用 gemma-4-31b-it 跑 AI 分析（以為 Gemma 也在 Gemini API
   可用，可以套 responseSchema），結果 API 呼叫成功，但 response 裡
-  的文字帶雜訊導致 `JSON.parse` 失敗，錯誤是：
+  的文字帶雜訊導致 JSON.parse 失敗，錯誤是：
       Unexpected non-whitespace character after JSON at position 523
 
   我怎麼辨識的：
   - 看 log 知道是 JSON parse 失敗，而不是 API 本身失敗
-  - 推測 Gemma 不支援 `responseMimeType: 'application/json'` +
-    `responseSchema`（這是 Gemini 獨有功能），Gemma 只會根據 prompt
+  - 推測 Gemma 不支援 responseMimeType: 'application/json' +
+    responseSchema（這是 Gemini 獨有功能），Gemma 只會根據 prompt
     做字串生成，輸出常帶 markdown code fence 或說明文字
 
-  調整：改用 `gemini-2.5-flash-lite`，一次通過，結構化輸出嚴格對應
+  調整：改用 gemini-2.5-flash-lite，一次通過，結構化輸出嚴格對應
   schema，不再有雜訊 parse 問題。
 
   教訓：SDK 支援 ≠ 功能支援。同一個 SDK 底下不同 model family 有
@@ -149,7 +149,7 @@ AI 使用紀錄 — 天氣觀測資料系統
   產出的 text 是這樣：
       「此區間共有 29 個完整資料天數 (factIds: [\"F1\"])」
 
-  AI 自作主張把 factIds 標示**塞進 text 裡**，同時在 JSON 的 factIds
+  AI 自作主張把 factIds 標示塞進 text 裡，同時在 JSON 的 factIds
   欄位也填了 ["F1"]。這段在前端會直接顯示「(factIds: [...])」給使用者
   看到，視覺污染。
 
@@ -160,7 +160,7 @@ AI 使用紀錄 — 天氣觀測資料系統
   調整：
   - Prompt 第 7 條明確加上「text 必須是純繁中，不得包含括號、factIds、
     JSON 語法」並附正確 / 錯誤範例
-  - Checker 加 R4b 規則，regex `/factIds|factId|\[\s*"F\d+"/` 擋掉
+  - Checker 加 R4b 規則，regex /factIds|factId|\[\s*"F\d+"/ 擋掉
     text 中出現的 JSON 語法，作為 prompt 失效時的第二層防線
 
   教訓：checker 的價值就在這裡 — prompt 一定會有失效的時候（特別是
@@ -170,14 +170,14 @@ AI 使用紀錄 — 天氣觀測資料系統
 
 ● 錯誤 8：Nuxt SSR 會讓客戶端 devProxy 失效
 
-  第一版主頁面用 `onMounted(submit)` 讓首次載入自動抓資料。在
+  第一版主頁面用 onMounted(submit) 讓首次載入自動抓資料。在
   Nuxt SSR 階段這也會執行一次，但 Nitro 內部 fetch 不走 devProxy，
   會打不到 backend 3001。
 
   我怎麼辨識的：
-  - 我預先想過 SSR 與 devProxy 的關係，用 `import.meta.client`
+  - 我預先想過 SSR 與 devProxy 的關係，用 import.meta.client
     guard 住，避免第一次載入就 500
-  - 直接 curl http://localhost:3000/ 看 SSR 輸出，確認 `<!---->`
+  - 直接 curl http://localhost:3000/ 看 SSR 輸出，確認 <!---->
     佔位符存在（表示 data 為 null 但沒報錯）
 
   教訓：「能動」有時候是因為第二次就觸發真正的 client fetch 蓋過
@@ -194,7 +194,7 @@ AI 使用紀錄 — 天氣觀測資料系統
       curl -d '{"input":"屈尺"}' ...
   在 Git Bash（Windows 10/11）下，shell 把中文字符以系統 locale（Big5,
   codepage 950）編碼才送出，後端收到的 JSON body 是亂碼，AI 看到
-  `���B` 當然判斷「不是地名」。
+  ���B 當然判斷「不是地名」。
 
   我怎麼辨識的：
   - 第一次 curl 測試時多看了 AI 的 reason 欄位：「使用者輸入的字串
@@ -258,7 +258,7 @@ AI 使用紀錄 — 天氣觀測資料系統
 結語
 ─────────────────────────────────────────────
 
-這次使用 AI 的核心原則是：**把 AI 當成會幻覺的資深工程師**。它
+這次使用 AI 的核心原則是：把 AI 當成會幻覺的資深工程師。它
 寫 code 速度是我的好幾倍、但文件解讀、邊界條件、真實世界資料型別
 這些細節全要我自己用真實證據對拍才敢採用。題目評的是「使用 AI 做
 判斷」，我交出的作品核心決策（該砍什麼、該關什麼、哪些規則要寫死）
