@@ -1,8 +1,9 @@
 AI 使用紀錄 — 天氣觀測資料系統
 =============================================
-工具：Claude Code (Claude Opus 4.6, 1M context)
-涵蓋範圍：範圍取捨決策 → 後端 Stage 1-2 → 前端 Stage 3
-（Stage 4 城市模糊匹配、Stage 5 AI 分析受限版尚未動工）
+工具：Claude Code (Claude Opus 4.6, 1M context) — 用於設計、寫碼、除錯
+      Google Gemini 2.5-flash-lite 經 @google/genai SDK — 作為受限版 AI 分析的生成器
+涵蓋範圍：範圍取捨決策 → Stage 1~3 (後端資料、指標、前端圖表) → Stage 5 (AI 分析受限版)
+（Stage 4 城市模糊匹配尚未動工；題目未強制要求，列為 optional）
 
 
 ─────────────────────────────────────────────
@@ -105,7 +106,69 @@ AI 使用紀錄 — 天氣觀測資料系統
   涉及安裝、build、deploy 的指令要自己看完整 log。
 
 
-● 錯誤 5：Nuxt SSR 會讓客戶端 devProxy 失效
+● 錯誤 5（Stage 5 踩的第一個雷）：AI API key 格式看起來對但實際不對
+
+  我原本以為拿到「任何長字串」就能當 API key，直接貼進 .env。第一次
+  設定 GEMINI_API_KEY 是 `AQ.Ab8RN6I4...` 開頭，呼叫時一直回 403 /
+  429，錯誤訊息裡 `free_tier_requests, limit: 0` 看起來像 quota 問題。
+
+  我怎麼辨識的：
+  - 對照 Google AI Studio 文件，發現官方 key 應該以 `AIza` 開頭，
+    `AQ.` 開頭是 Google Cloud OAuth token，根本不是 AI Studio key
+  - 因此即使 API 回 429 而非 401，真正原因是「key 格式混淆 + 專案
+    免費額度設定問題」複合，需要分兩步解決
+
+  教訓：API 錯誤訊息不一定指向真正原因。429 不代表「用超過」，可能
+  是「key 本身被當成沒配額的身分」。遇到 `limit: 0` 要先懷疑是身分
+  而非用量問題。
+
+
+● 錯誤 6（Stage 5）：Gemma 模型不支援 Gemini 的 structured output
+
+  我本來想用 `gemma-4-31b-it` 跑 AI 分析（以為 Gemma 也在 Gemini API
+  可用，可以套 responseSchema），結果 API 呼叫成功，但 response 裡
+  的文字帶雜訊導致 `JSON.parse` 失敗，錯誤是：
+      Unexpected non-whitespace character after JSON at position 523
+
+  我怎麼辨識的：
+  - 看 log 知道是 JSON parse 失敗，而不是 API 本身失敗
+  - 推測 Gemma 不支援 `responseMimeType: 'application/json'` +
+    `responseSchema`（這是 Gemini 獨有功能），Gemma 只會根據 prompt
+    做字串生成，輸出常帶 markdown code fence 或說明文字
+
+  調整：改用 `gemini-2.5-flash-lite`，一次通過，結構化輸出嚴格對應
+  schema，不再有雜訊 parse 問題。
+
+  教訓：SDK 支援 ≠ 功能支援。同一個 SDK 底下不同 model family 有
+  不同能力邊界，要看 model 文件而不是只看 SDK 說明。
+
+
+● 錯誤 7（Stage 5 的關鍵教訓）：AI 以為自己要幫忙，結果是傷害
+
+  Gemini 第一次成功 pass checker 後，我檢查實際 sentences，發現 AI
+  產出的 text 是這樣：
+      「此區間共有 29 個完整資料天數 (factIds: [\"F1\"])」
+
+  AI 自作主張把 factIds 標示**塞進 text 裡**，同時在 JSON 的 factIds
+  欄位也填了 ["F1"]。這段在前端會直接顯示「(factIds: [...])」給使用者
+  看到，視覺污染。
+
+  我怎麼辨識的：
+  - 我不是看 verdict=pass 就信，而是把每句的 text 列出來肉眼讀
+  - 一眼看到英文方括號在中文敘述裡就知道不對
+
+  調整：
+  - Prompt 第 7 條明確加上「text 必須是純繁中，不得包含括號、factIds、
+    JSON 語法」並附正確 / 錯誤範例
+  - Checker 加 R4b 規則，regex `/factIds|factId|\[\s*"F\d+"/` 擋掉
+    text 中出現的 JSON 語法，作為 prompt 失效時的第二層防線
+
+  教訓：checker 的價值就在這裡 — prompt 一定會有失效的時候（特別是
+  新 edge case），deterministic 規則檢查是最後一道不會幻覺的防線。
+  我絕對不會讓「看起來 pass 就好」的僥倖上線。
+
+
+● 錯誤 8：Nuxt SSR 會讓客戶端 devProxy 失效
 
   第一版主頁面用 `onMounted(submit)` 讓首次載入自動抓資料。在
   Nuxt SSR 階段這也會執行一次，但 Nitro 內部 fetch 不走 devProxy，
