@@ -1,91 +1,149 @@
-氣象觀測資料系統 (Weather Monitoring System)
-本專案旨在建立一個高效、穩定且具備自動化更新能力的氣象觀測數據平台。採用 NestJS 作為強型別後端核心，並結合 Nuxt.js 實現流暢的前端使用者體驗。
+# 氣象觀測資料系統
 
-🏗 系統架構設計
-系統分為三個主要層級：
+給定台灣測站，顯示近 30 天氣象觀測資料、近 5/20 日平均最高溫指標、可信度提示，與受規則約束的 AI 敘述分析。
 
-資料獲取層 (Data Acquisition)：透過 NestJS Task Scheduling 定期對中央氣象署 (CWA) Open API 發送請求。
+![demo](./demo.gif)
 
-邏輯與持久層 (Processing & Persistence)：進行資料清洗（處理 null 值、格式化單位），並將歷史數據存儲於資料庫。
+> 本專案為工程部 AI Coding 實戰任務 (平行考卷一) 的實作成果。完整決策紀錄見 [`平行考卷一：天氣觀測資料系統版.txt`](./平行考卷一：天氣觀測資料系統版.txt) 與 [`AI_USAGE_LOG.txt`](./AI_USAGE_LOG.txt)。
 
-展示層 (Presentation)：Nuxt.js 透過 SSR 獲取最新數據，並利用 ECharts/Chart.js 進行視覺化展示。
+---
 
-🛠 技術棧 (Tech Stack)
-後端 (Backend - NestJS)
-Framework: NestJS (Node.js)
+## ✨ 功能特點
 
-Task Scheduling: @nestjs/schedule (Cron Jobs)
+- **近 30 天觀測資料**：每日最高/最低/平均溫、累積雨量。嚴格處理 CWA 官方未文件化的 `"T"`（trace 微量降雨）值。
+- **指標計算**：近 5 日、近 20 日平均最高溫（移動平均），**視窗含任一缺漏日即輸出 null，絕不做部分平均**。
+- **可信度旗標**：資料完整度、缺漏日期、指標是否可算 — 在 UI 以綠/黃/紅三級提示。
+- **AI 分析受限版**：Gemini 只能引用後端預先算好的 8 個 facts，並經過 6 條 deterministic 規則檢查才顯示；任一不過則 fail-closed 不輸出。
+- **地名模糊匹配**：三層策略（字串正規化 → 精確/子串比對 → AI fallback），支援「屈尺」「墾丁」等村里級或別名輸入；白名單強制 + 使用者確認。
 
-Data Fetching: @nestjs/axios + rxjs
+---
 
-Validation: class-validator + Zod (用於 API 響應校驗)
+## 🏗 架構
 
-Database: PostgreSQL (推薦) 或 MongoDB
+```
+┌──────────────┐   HTTP  ┌─────────────────────────────┐
+│ Nuxt 4 (前端) │ ──────▶ │ NestJS 11 (後端)            │
+│              │         │                             │
+│ ECharts      │         │ /api/weather                │
+│ Pinia        │         │   ├─ WeatherService         │
+│ Tailwind     │         │   ├─ Zod schema + "T" 處理   │
+│              │         │   └─ MA5/MA20 + 可信度旗標   │
+│              │         │                             │
+│              │         │ /api/analyze                │
+│              │         │   ├─ FactsBuilder           │
+│              │         │   ├─ Gemini (受限)           │
+│              │         │   └─ 6 條 deterministic 規則 │
+│              │         │                             │
+│              │         │ /api/station/match          │
+│              │         │   ├─ 字串正規化 + 子串比對    │
+│              │         │   └─ AI fallback + 白名單    │
+└──────────────┘         └──────────┬──────────────────┘
+                                    ▼
+                         ┌─────────────────────────┐
+                         │ CWA Open Data API       │
+                         │ ├─ C-B0024-001 溫度統計  │
+                         │ └─ C-B0025-001 每日雨量  │
+                         └─────────────────────────┘
+                         ┌─────────────────────────┐
+                         │ Google Gemini API       │
+                         │ gemini-2.5-flash-lite   │
+                         └─────────────────────────┘
+```
 
-前端 (Frontend - Nuxt.js)
-Framework: Nuxt 3
+---
 
-State Management: Pinia
+## 🛠 技術棧
 
-Styling: Tailwind CSS + Nuxt UI (或 Shadcn-vue)
+**後端** NestJS 11 · Zod · `@google/genai` · Node 22 原生 `fetch`
+**前端** Nuxt 4 · Pinia · Tailwind CSS · ECharts · vue-echarts
+**AI** Google Gemini 2.5-flash-lite（structured output + schema 強制約束）
 
-Charts: ECharts / Vue-Chartjs
+**刻意不使用**（詳見作答文件 A.3 / G）：
+- PostgreSQL / MongoDB — 單用戶情境不需持久化
+- `@nestjs/schedule` Cron Jobs — 無背景定期任務需求
+- Redis / 訊息隊列 — 過度設計
+- 自動化測試框架 — 改以手動對拍 CWA 官網數字（見 STAGE2.md）
+- Nuxt UI / Shadcn-vue — Tailwind primitive 已足夠
 
-Data Fetching: useFetch / useAsyncData
+---
 
-📂 專案目錄結構預覽
-Plaintext
-weather-system/
-├── backend/                # NestJS 應用
-│   ├── src/
-│   │   ├── crawler/        # 定時抓取模組
-│   │   ├── weather/        # 氣象資料業務邏輯
-│   │   │   ├── dto/        # Data Transfer Objects
-│   │   │   └── schemas/    # 資料庫 Schema (Prisma/Mongoose)
-│   │   └── common/         # 攔截器、過濾器、工具類
-├── frontend/               # Nuxt.js 應用
-│   ├── components/         # 儀表板組件、圖表組件
-│   ├── pages/              # 路由 (主頁、測站詳情)
-│   ├── server/             # Nuxt Server Engine (Nitro)
-│   └── stores/             # Pinia 全域狀態
-└── docker-compose.yml      # 環境容器化配置
-🚀 核心功能實現想法
-1. 智慧型資料抓取 (NestJS)
-頻率控制：根據氣象局 API 更新頻率（如每 10 或 60 分鐘）設定 Cron Job。
+## 📂 專案結構
 
-錯誤重試機制：若氣象局 API 逾時，系統應具備 Exponential Backoff 重試策略。
+```
+weather_observation/
+├── backend/                    NestJS
+│   ├── src/weather/           CWA 資料擷取 + 指標計算
+│   │   ├── cwa.schemas.ts      Zod schema + parseRainfall("T")
+│   │   ├── cwa.client.ts       兩個 CWA endpoint 呼叫
+│   │   ├── metrics.ts          rollingAverage 純函數
+│   │   └── weather.service.ts  統一化 30 日 payload
+│   ├── src/analysis/          AI 分析受限版
+│   │   ├── facts.ts            從 payload 萃取 8 個 facts
+│   │   ├── checker.ts          6 條 deterministic 規則
+│   │   └── analysis.service.ts Gemini 整合
+│   ├── src/station/           地名模糊匹配
+│   │   ├── stations.ts         27 個測站白名單 + 別名
+│   │   └── station.service.ts  字串 + AI fallback
+│   └── STAGE{1,2,4,5}.md       各階段說明
+└── frontend/                   Nuxt 4
+    ├── app/pages/index.vue    主頁面
+    ├── app/components/
+    │   ├── WeatherChart.vue    ECharts 走勢圖 + 雙平均線
+    │   ├── CredibilityPanel.vue 綠/黃/紅三級可信度
+    │   ├── MetricCards.vue     MA5/MA20 數字卡
+    │   └── AnalysisPanel.vue   AI 分析 + fact 標籤
+    ├── app/composables/        useWeather / useAnalysis / useStationMatch
+    └── STAGE3.md               前端說明
+```
 
-資料清洗：
+---
 
-轉換 -999 或 9999 等異常值為 null 或標記。
+## 🚀 啟動指令
 
-將測站時間由 UTC 轉換為 Asia/Taipei。
+需要：Node.js ≥ 22、npm 或 pnpm，以及兩把 key：
 
-2. 資料展現與互動 (Nuxt.js)
-即時狀態卡片：顯示當前溫度、風向、時雨量。
+| Key | 取得處 | 用途 |
+| --- | --- | --- |
+| `CWA_AUTH_KEY` | https://opendata.cwa.gov.tw/userLogin | CWA 氣象資料 |
+| `GEMINI_API_KEY` | https://aistudio.google.com/apikey | AI 分析 + 地名模糊匹配 |
 
-歷史趨勢圖：展示過去 24 小時的氣溫與氣壓變化。
+### 後端（port 3001）
 
-響應式地圖：點擊地圖上的測站圖示可即時跳轉至該站詳細數據。
+```bash
+cd backend
+cp .env.example .env          # 編輯填入兩把 key
+npm install
+npm run build
+node dist/main.js
+```
 
-3. 系統加分項 (Engineering Excellence)
-Caching 層：針對頻繁讀取的最新觀測值，在 NestJS 實作 Redis 或內存快取，降低資料庫壓力。
+### 前端（port 3000）
 
-Health Check：提供 /health API 監控系統與外部 API 的連線狀態。
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-Type Safety：前後端共享 TypeScript Interface，確保數據傳遞零誤差。
+打開 http://localhost:3000 即可使用。
 
-📝 後續開發計畫 (Roadmap)
-[ ] 初始化 NestJS 專案並整合 Swagger 文件。
+---
 
-[ ] 實作 CWA API 認證與基礎數據抓取 Service。
+## 🔑 關鍵設計決策
 
-[ ] 設計資料庫實體 (Entities) 並完成遷移。
+1. **指標放在後端算** — 單一事實來源，AI 分析與圖表用同一份數字。
+2. **視窗含 null → MA = null** — 不做部分平均，不誤導使用者。
+3. **AI 雙層防禦** — 受限生成 + deterministic regex 檢查，fail-closed 不輸出。
+4. **不跨源補值** — 溫度（C-B0024-001）與雨量（C-B0025-001）各自判斷，不推論「雨量有所以溫度應該也有」。
+5. **Fail-loud** — 任何異常都反映到 `credibility` 欄位，決策邏輯透明給使用者。
 
-[ ] 搭建 Nuxt 基礎架構與導航。
+---
 
-[ ] 實作首頁 Dashboard 圖表與測站列表。
+## 📝 完整文件
 
-[ ] 完成 Docker 化部署配置。
-
-備註：本計畫書作為工程部考卷之開發藍圖，後續將依據具體題目需求調整業務邏輯。
+- [AI 使用紀錄](./AI_USAGE_LOG.txt) — 9 個具體踩雷與辨識方式
+- [backend/STAGE1.md](./backend/STAGE1.md) — 資料擷取
+- [backend/STAGE2.md](./backend/STAGE2.md) — 指標計算
+- [frontend/STAGE3.md](./frontend/STAGE3.md) — 圖表與可信度 UI
+- [backend/STAGE4.md](./backend/STAGE4.md) — 地名模糊匹配
+- [backend/STAGE5.md](./backend/STAGE5.md) — AI 分析受限版
